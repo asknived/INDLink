@@ -1,0 +1,49 @@
+name: INDLink Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check & Lint
+        run: |
+          npx tsc --noEmit
+          npm run lint
+
+      - name: Prisma Generate & Validate
+        run: |
+          npx prisma generate
+          npx prisma validate
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Deploy via SSH (Example)
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /var/www/indlink
+            git pull origin main
+            docker compose down
+            docker compose up -d --build

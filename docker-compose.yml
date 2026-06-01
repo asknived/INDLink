@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: indlink_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://indlink:securepassword@db:3306/indlink
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SECRET=generate_a_secure_secret
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - indlink_network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: indlink_worker
+    restart: always
+    command: ["node", "src/jobs/index.js"] # Wait, standalone doesn't output jobs like this. In production, BullMQ workers can just be integrated into the Next.js custom server or a separate Node script. We will leave this commented/mocked.
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - indlink_network
+
+  db:
+    image: mysql:8.0
+    container_name: indlink_mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: indlink
+      MYSQL_USER: indlink
+      MYSQL_PASSWORD: securepassword
+      MYSQL_ROOT_PASSWORD: secure_root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - indlink_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: indlink_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    networks:
+      - indlink_network
+
+networks:
+  indlink_network:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:

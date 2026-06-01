@@ -1,0 +1,737 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  role          Role      @default(USER)
+  storageUsed   BigInt    @default(0) // Bytes
+  storageLimit  BigInt    @default(104857600) // 100MB Default
+  
+  // Tax / Billing Info
+  gstNumber     String?
+  businessName  String?
+  billingAddress String?  @db.Text
+
+  // Enterprise Security
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  profile       Profile?
+  subscriptions Subscription[]
+  mediaAssets   MediaAsset[]
+  payments      Payment[]
+  invoices      Invoice[]
+  purchases     Purchase[]
+  
+  // Enterprise
+  teamMembers   TeamMember[]
+  apiKeys       ApiKey[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  reports       Report[]       @relation("Reporter")
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Profile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  username         String   @unique
+  displayName      String?
+  bio              String?  @db.Text
+  website          String?
+  location         String?
+  avatar           String?
+  avatarStorageKey String?  // Phase 4 Prep
+  coverImage       String?
+  coverStorageKey  String?  // Phase 4 Prep
+  backgroundUrl    String?  // Phase 4
+  backgroundStorageKey String? // Phase 4
+  themeId          String?
+  viewCount        Int      @default(0) // Analytics Prep
+  customDomain     String?  @unique     // Custom Domains Prep
+  aiGeneratedBio   Boolean  @default(false) // AI Prep
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links          Link[]
+  socialLinks    SocialLink[]
+  theme          Theme?           @relation(fields: [themeId], references: [id])
+  clicks         Click[]
+  profileViews   ProfileView[]
+  visitorSessions VisitorSession[]
+  dailyAnalytics DailyAnalytics[]
+  qrCodes        QRCode[]
+  
+  // Monetization
+  products       Product[]
+  donations      Donation[]
+  membershipTiers MembershipTier[]
+  affiliateLinks AffiliateLink[]
+  
+  // Enterprise
+  domains        CustomDomain[]
+  teams          Team[]
+}
+
+model SocialLink {
+  id        String       @id @default(cuid())
+  profileId String
+  platform  PlatformEnum
+  url       String
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Link {
+  id            String       @id @default(cuid())
+  profileId     String
+  title         String
+  url           String
+  type          PlatformEnum @default(CUSTOM)
+  icon          String?
+  position      Int          @default(0)
+  isActive      Boolean      @default(true)
+  isFeatured    Boolean      @default(false)
+  clickCount    Int          @default(0) // Analytics Prep
+  aiDescription Boolean      @default(false) // AI Prep
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  profile       Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  clicks        Click[]
+}
+
+model Theme {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  settings  Json     // { bgColor, buttonStyle, fontFamily, animations, borderRadius, etc. }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles  Profile[]
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  plan      SubscriptionPlan   @default(FREE)
+  status    SubscriptionStatus @default(ACTIVE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// Phase 3: Analytics Models
+// ==========================================
+
+model Click {
+  id              String   @id @default(cuid())
+  profileId       String
+  linkId          String
+  timestamp       DateTime @default(now())
+  ipAddress       String?  // Will be anonymized
+  country         String?
+  city            String?
+  device          String?
+  browser         String?
+  operatingSystem String?
+  referrer        String?
+  userAgent       String?  @db.Text
+  isBot           Boolean  @default(false)
+
+  // UTM Tracking
+  utm_source      String?
+  utm_medium      String?
+  utm_campaign    String?
+  utm_term        String?
+  utm_content     String?
+
+  profile         Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  link            Link    @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([linkId])
+  @@index([country])
+  @@index([device])
+  @@index([timestamp])
+}
+
+model ProfileView {
+  id                 String   @id @default(cuid())
+  profileId          String
+  visitorFingerprint String
+  timestamp          DateTime @default(now())
+  ipAddress          String?
+  country            String?
+  city               String?
+  device             String?
+  browser            String?
+  operatingSystem    String?
+  referrer           String?
+  userAgent          String?  @db.Text
+  isBot              Boolean  @default(false)
+
+  profile            Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([timestamp])
+}
+
+model VisitorSession {
+  id          String   @id @default(cuid())
+  profileId   String
+  fingerprint String
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+  visitCount  Int      @default(1)
+
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, fingerprint])
+  @@index([fingerprint])
+}
+
+model DailyAnalytics {
+  id             String   @id @default(cuid())
+  profileId      String
+  date           DateTime @db.Date
+  totalViews     Int      @default(0)
+  totalClicks    Int      @default(0)
+  uniqueVisitors Int      @default(0)
+
+  profile        Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, date])
+  @@index([profileId])
+  @@index([date])
+}
+
+// ==========================================
+// Phase 4: Media & QR Models
+// ==========================================
+
+model MediaAsset {
+  id              String   @id @default(cuid())
+  userId          String
+  type            String   // avatar, cover, background, product
+  url             String
+  storageKey      String   @unique
+  fileSize        Int      // Bytes
+  mimeType        String
+  
+  // Future Digital Products (Phase 5 Prep)
+  isDownloadable  Boolean  @default(false)
+  downloadUrl     String?
+  productId       String?
+  downloadCount   Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+}
+
+model QRCode {
+  id            String   @id @default(cuid())
+  profileId     String
+  linkId        String?  // Nullable, if null it's a profile QR
+  type          String   // profile, link
+  imageUrl      String   // Data URI or Storage URL
+  scanCount     Int      @default(0)
+  lastScannedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profile       Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  // Can link to Link model, but omitted relation to prevent complex cascading if not needed strictly
+
+  @@index([profileId])
+  @@index([linkId])
+}
+
+// ==========================================
+// Phase 5: Monetization & Billing
+// ==========================================
+
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  amount            Int           // In paise (INR)
+  currency          String        @default("INR")
+  provider          String        @default("RAZORPAY")
+  status            PaymentStatus @default(PENDING)
+  type              PaymentType
+  razorpayOrderId   String?       @unique
+  razorpayPaymentId String?       @unique
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchase          Purchase?
+  donation          Donation?
+  invoice           Invoice?
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String
+  type               SubscriptionType   @default(PLATFORM)
+  planId             String?            // Null if custom membership, enum if platform
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoices           Invoice[]
+
+  @@index([userId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  paymentId      String?  @unique
+  amount         Int
+  invoiceNumber  String   @unique
+  pdfUrl         String?
+  createdAt      DateTime @default(now())
+
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payment        Payment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+// ==========================================
+// Digital Products & Creators
+// ==========================================
+
+model Product {
+  id                   String        @id @default(cuid())
+  profileId            String
+  slug                 String        @unique
+  title                String
+  description          String        @db.Text
+  price                Int           // In paise
+  coverImage           String?
+  fileUrl              String        // Kept secure, served via API
+  status               ProductStatus @default(ACTIVE)
+  isFeatured           Boolean       @default(false)
+  category             String?
+  tags                 String?
+  
+  // Phase 6 Prep
+  aiDescription        String?       @db.Text
+  aiTags               String?
+  isMarketplaceProduct Boolean       @default(false)
+  marketplaceApproved  Boolean       @default(false)
+
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  profile              Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  purchases            Purchase[]
+  reviews              Review[]
+
+  @@index([profileId])
+}
+
+model Purchase {
+  id         String   @id @default(cuid())
+  productId  String
+  userId     String?  // Nullable for guest checkouts
+  buyerEmail String
+  amount     Int
+  paymentId  String   @unique
+  createdAt  DateTime @default(now())
+
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([userId])
+}
+
+model Donation {
+  id           String   @id @default(cuid())
+  profileId    String
+  paymentId    String   @unique
+  donorName    String?  // Null if anonymous
+  donorEmail   String?
+  message      String?  @db.Text
+  isAnonymous  Boolean  @default(false)
+  isMonthly    Boolean  @default(false)
+  amount       Int
+  createdAt    DateTime @default(now())
+
+  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  payment      Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model Coupon {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  discountType  DiscountType
+  discountValue Int
+  expiryDate    DateTime?
+  usageLimit    Int?
+  usageCount    Int          @default(0)
+  createdAt     DateTime     @default(now())
+}
+
+model MembershipTier {
+  id          String   @id @default(cuid())
+  profileId   String
+  name        String
+  price       Int
+  benefits    String   @db.Text // JSON or comma separated
+  createdAt   DateTime @default(now())
+
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model AffiliateLink {
+  id          String   @id @default(cuid())
+  profileId   String
+  url         String
+  clicks      Int      @default(0)
+  conversions Int      @default(0)
+  earnings    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+// ==========================================
+// Phase 6 & 7: Enterprise & Infrastructure
+// ==========================================
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isEnabled   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CustomDomain {
+  id                String       @id @default(cuid())
+  profileId         String
+  domain            String       @unique
+  status            DomainStatus @default(PENDING)
+  verificationToken String?
+  dnsRecord         String?
+  sslStatus         String?      @default("PENDING")
+  verifiedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  profile           Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model Team {
+  id          String       @id @default(cuid())
+  profileId   String
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  profile     Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  invitations TeamInvitation[]
+
+  @@index([profileId])
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamRole @default(VIEWER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model TeamInvitation {
+  id        String   @id @default(cuid())
+  teamId    String
+  email     String
+  role      TeamRole @default(VIEWER)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  keyHash    String    @unique
+  prefix     String    // e.g. "ind_live_ABCD"
+  scopes     String    // Comma separated e.g. "profiles:read,links:read"
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String
+  metadata    String?  @db.Text // JSON
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Report {
+  id          String       @id @default(cuid())
+  reporterId  String?
+  targetId    String       // ID of profile, link, product
+  targetType  String       // PROFILE, LINK, PRODUCT
+  reason      String       @db.Text
+  status      ReportStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  reporter    User?        @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+
+  @@index([targetId])
+  @@index([status])
+}
+
+model SupportTicket {
+  id        String       @id @default(cuid())
+  email     String
+  subject   String
+  message   String       @db.Text
+  status    TicketStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([status])
+}
+
+// ==========================================
+
+enum Role {
+  USER
+  ADMIN
+  BUSINESS
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+enum SubscriptionType {
+  PLATFORM
+  CREATOR
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentType {
+  SUBSCRIPTION
+  PRODUCT
+  DONATION
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+  ARCHIVED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  EDITOR
+  ANALYST
+  VIEWER
+}
+
+enum NotificationType {
+  SYSTEM
+  BILLING
+  TEAM
+  PRODUCT
+  SECURITY
+  AI
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum PlatformEnum {
+  WEBSITE
+  YOUTUBE
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  LINKEDIN
+  WHATSAPP
+  TELEGRAM
+  SPOTIFY
+  GITHUB
+  TWITTER
+  CUSTOM
+}
